@@ -1,15 +1,14 @@
 /* ============================================================
    api/discord/test.js
-   Visit /api/discord/test to verify the webhook end to end.
    ============================================================ */
 
-import { createMessage, buildPayload, stageMeta } from '../_discord.js';
+import { createMessage, buildPayload, stageMeta, webhookConfigured } from '../_discord.js';
 
 export default async function handler(req, res) {
-  if (!process.env.DISCORD_WEBHOOK) {
+  if (!webhookConfigured()) {
     return res.status(500).json({
       ok: false,
-      error: 'DISCORD_WEBHOOK is not set in Vercel environment variables',
+      error: 'No webhook configured',
     });
   }
 
@@ -36,8 +35,5 @@ export default async function handler(req, res) {
   return res.status(200).json({
     ok: !!msg,
     message_id: (msg && msg.id) || null,
-    hint: msg
-      ? 'Check your Discord channel.'
-      : 'Webhook rejected the request - check the URL and the Vercel logs.',
   });
 }
