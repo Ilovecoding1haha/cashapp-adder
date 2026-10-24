@@ -1,0 +1,5 @@
+{
+  "name": "cashapp-adder",
+  "private": true,
+  "type": "module"
+}
